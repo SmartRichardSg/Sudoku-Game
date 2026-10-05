@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f2937">
+<title>Sudoku Game</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f4f6f8;color:#1f2937;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:flex;justify-content:center;min-height:100vh}
+.app{width:min(100%,520px);padding:18px 14px 28px}
+h1{text-align:center;margin:4px 0 3px;font-size:30px}
+.subtitle{text-align:center;color:#6b7280;margin-bottom:16px}
+.top{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:12px}
+button,select{font:inherit;border:0;border-radius:10px;padding:10px 13px;background:white;box-shadow:0 1px 4px #0002}
+button{cursor:pointer;font-weight:600}
+button:active{transform:scale(.98)}
+.primary{background:#2563eb;color:white}
+.info{display:flex;justify-content:space-between;gap:8px;margin:10px 2px;font-weight:700}
+.info span{background:white;padding:8px 11px;border-radius:10px;flex:1;text-align:center}
+.board{width:min(94vw,450px);aspect-ratio:1;margin:12px auto;background:#111827;display:grid;grid-template-columns:repeat(9,1fr);border:3px solid #111827;border-radius:5px;overflow:hidden}
+.cell{position:relative;background:white;border:1px solid #cbd5e1;display:flex;align-items:center;justify-content:center;font-size:clamp(21px,7vw,32px);font-weight:600;cursor:pointer;user-select:none}
+.cell:nth-child(3n){border-right:2px solid #111827}
+.cell:nth-child(n+19):nth-child(-n+27),.cell:nth-child(n+46):nth-child(-n+54){border-bottom:2px solid #111827}
+.cell.given{background:#e9eef5;color:#111827}
+.cell.selected{background:#dbeafe}
+.cell.same{background:#eff6ff}
+.cell.error{background:#fee2e2;color:#b91c1c}
+.cell .notes{position:absolute;inset:2px;display:grid;grid-template-columns:repeat(3,1fr);font-size:10px;color:#64748b;font-weight:500;line-height:1}
+.cell .notes span{display:flex;align-items:center;justify-content:center}
+.controls{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;max-width:450px;margin:14px auto}
+.controls button{padding:13px 5px;font-size:18px}
+.status{text-align:center;min-height:24px;margin:8px;color:#475569;font-weight:600}
+.stats{background:white;border-radius:14px;padding:13px;margin-top:16px;box-shadow:0 1px 5px #0001}
+.stats h2{font-size:18px;margin:0 0 9px}
+.stats p{margin:5px 0;color:#475569}
+.modal{position:fixed;inset:0;background:#0008;display:none;align-items:center;justify-content:center;padding:20px;z-index:5}
+.modal.show{display:flex}
+.modalbox{background:white;border-radius:18px;padding:24px;text-align:center;width:min(360px,100%);box-shadow:0 10px 40px #0005}
+.modalbox h2{margin-top:0}
+.small{font-size:13px;color:#64748b}
+@media(max-width:360px){.app{padding-left:8px;padding-right:8px}.cell{font-size:20px}.controls{gap:5px}}
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>Sudoku</h1>
+  <div class="subtitle">Train your brain, one puzzle at a time.</div>
+
+  <div class="top">
+    <select id="difficulty" aria-label="Difficulty">
+      <option value="easy">Easy</option>
+      <option value="medium" selected>Medium</option>
+      <option value="hard">Hard</option>
+    </select>
+    <button class="primary" id="newGame">New Game</button>
+    <button id="continueBtn">Continue</button>
+  </div>
+
+  <div class="info">
+    <span>⏱ <b id="timer">00:00</b></span>
+    <span>❌ Mistakes: <b id="mistakes">0</b>/3</span>
+  </div>
+
+  <div id="board" class="board" aria-label="Sudoku board"></div>
+  <div id="status" class="status">Select a square, then enter a number.</div>
+
+  <div class="controls">
+    <button data-num="1">1</button><button data-num="2">2</button><button data-num="3">3</button>
+    <button data-num="4">4</button><button data-num="5">5</button><button data-num="6">6</button>
+    <button data-num="7">7</button><button data-num="8">8</button><button data-num="9">9</button>
+    <button id="erase">⌫</button><button id="notes">✎ Notes</button>
+    <button id="undo">↩ Undo</button>
+  </div>
+
+  <div class="stats">
+    <h2>Best Times</h2>
+    <p>Easy: <b id="bestEasy">—</b></p>
+    <p>Medium: <b id="bestMedium">—</b></p>
+    <p>Hard: <b id="bestHard">—</b></p>
+  </div>
+  <p class="small" style="text-align:center;margin-top:14px">Your current game is saved automatically on this device.</p>
+</div>
+
+<div id="modal" class="modal">
+  <div class="modalbox">
+    <h2 id="modalTitle">Puzzle Complete! 🎉</h2>
+    <p id="modalText"></p>
+    <button class="primary" id="modalNew">New Game</button>
+  </div>
+</div>
+
+<script>
+const boardEl=document.getElementById("board");
+const difficultyEl=document.getElementById("difficulty");
+const timerEl=document.getElementById("timer");
+const mistakesEl=document.getElementById("mistakes");
+const statusEl=document.getElementById("status");
+let solution=[], puzzle=[], values=[], notes=Array.from({length:81},()=>new Set());
+let given=new Set(), selected=-1, mistakes=0, seconds=0, timer=null, noteMode=false, history=[];
+const KEY="sudokuGameV1";
+
+function shuffle(a){a=[...a];for(let i=a.length-1;i>0;i--){let j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+function pattern(r,c){return (r*3+Math.floor(r/3)+c)%9}
+function makeSolution(){
+  const rows=[0,1,2].flatMap(g=>shuffle([0,1,2]).map(x=>g*3+x));
+  const cols=[0,1,2].flatMap(g=>shuffle([0,1,2]).map(x=>g*3+x));
+  const nums=shuffle([1,2,3,4,5,6,7,8,9]);
+  return rows.flatMap(r=>cols.map(c=>nums[pattern(r,c)]));
+}
+function countSolutions(grid,limit=2){
+  let count=0;
+  function solve(){
+    if(count>=limit)return;
+    let best=-1,opts=null;
+    for(let i=0;i<81;i++) if(grid[i]===0){
+      let r=Math.floor(i/9),c=i%9,b=Math.floor(r/3)*3+Math.floor(c/3)*0;
+      let used=new Set();
+      for(let k=0;k<9;k++){used.add(grid[r*9+k]);used.add(grid[k*9+c]);}
+      let br=Math.floor(r/3)*3,bc=Math.floor(c/3)*3;
+      for(let rr=br;rr<br+3;rr++)for(let cc=bc;cc<bc+3;cc++)used.add(grid[rr*9+cc]);
+      let o=[];for(let n=1;n<=9;n++)if(!used.has(n))o.push(n);
+      if(!opts||o.length<opts.length){best=i;opts=o;if(o.length===1)break}
+    }
+    if(best<0){count++;return}
+    for(const n of opts){grid[best]=n;solve();grid[best]=0;if(count>=limit)return}
+  }
+  solve();return count;
+}
+function makePuzzle(diff){
+  solution=makeSolution();
+  puzzle=[...solution];
+  let removals=diff==="easy"?38:diff==="medium"?48:55;
+  const order=shuffle([...Array(81).keys()]);
+  let removed=0;
+  for(const i of order){
+    if(removed>=removals)break;
+    const old=puzzle[i];puzzle[i]=0;
+    const test=[...puzzle];
+    if(countSolutions(test,2)!==1)puzzle[i]=old;else removed++;
+  }
+  return puzzle;
+}
+function startNew(){
+  stopTimer(); const diff=difficultyEl.value;
+  makePuzzle(diff); values=[...puzzle];notes=Array.from({length:81},()=>new Set());
+  given=new Set(values.map((v,i)=>v?i:-1).filter(i=>i>=0));
+  selected=-1;mistakes=0;seconds=0;history=[];noteMode=false;
+  statusEl.textContent="Select a square, then enter a number.";
+  render();updateInfo();startTimer();save();
+}
+function startTimer(){timer=setInterval(()=>{seconds++;updateInfo();if(seconds%5===0)save()},1000)}
+function stopTimer(){if(timer){clearInterval(timer);timer=null}}
+function fmt(s){return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0")}
+function updateInfo(){timerEl.textContent=fmt(seconds);mistakesEl.textContent=mistakes}
+function render(){
+  boardEl.innerHTML="";
+  const selVal=selected>=0?values[selected]:0;
+  for(let i=0;i<81;i++){
+    const cell=document.createElement("div");cell.className="cell";
+    if(given.has(i))cell.classList.add("given");
+    if(i===selected)cell.classList.add("selected");
+    if(selVal&&values[i]===selVal)cell.classList.add("same");
+    if(values[i] && !given.has(i) && values[i]!==solution[i])cell.classList.add("error");
+    if(values[i])cell.textContent=values[i];
+    else if(notes[i].size){
+      const ns=document.createElement("div");ns.className="notes";
+      for(let n=1;n<=9;n++){const s=document.createElement("span");s.textContent=notes[i].has(n)?n:"";ns.appendChild(s)}
+      cell.appendChild(ns);
+    }
+    cell.onclick=()=>{selected=i;statusEl.textContent=given.has(i)?"This number is fixed.":"Enter a number.";render()};
+    boardEl.appendChild(cell);
+  }
+}
+function snapshot(){history.push({values:values.slice(),notes:notes.map(s=>new Set(s)),mistakes})}
+function inputNumber(n){
+  if(selected<0){statusEl.textContent="Select a square first.";return}
+  if(given.has(selected)){statusEl.textContent="That square is fixed.";return}
+  if(noteMode){
+    snapshot(); notes[selected].has(n)?notes[selected].delete(n):notes[selected].add(n);
+    render();save();return;
+  }
+  if(solution[selected]!==n){
+    mistakes++;updateInfo();statusEl.textContent="Not quite — try again.";
+    if(mistakes>=3){finish(false)} return;
+  }
+  snapshot();values[selected]=n;notes[selected].clear();statusEl.textContent="Good move!";
+  render();save();checkWin();
+}
+function erase(){
+  if(selected<0||given.has(selected))return;
+  snapshot();values[selected]=0;notes[selected].clear();render();save();
+}
+function undo(){
+  const h=history.pop();if(!h){statusEl.textContent="Nothing to undo.";return}
+  values=h.values;notes=h.notes;mistakes=h.mistakes;updateInfo();render();save();
+}
+function checkWin(){
+  if(values.every((v,i)=>v===solution[i]))finish(true);
+}
+function finish(win){
+  stopTimer();
+  if(win){
+    const diff=difficultyEl.value,key="best"+diff[0].toUpperCase()+diff.slice(1);
+    const old=localStorage.getItem(key);
+    if(!old||seconds<Number(old))localStorage.setItem(key,seconds);
+    document.getElementById("modalTitle").textContent="Puzzle Complete! 🎉";
+    document.getElementById("modalText").textContent=`You solved the ${diff} puzzle in ${fmt(seconds)}.`;
+    loadBest();
+  }else{
+    document.getElementById("modalTitle").textContent="Game Over";
+    document.getElementById("modalText").textContent="Three mistakes. Start a new puzzle and try again.";
+  }
+  document.getElementById("modal").classList.add("show");
+  localStorage.removeItem(KEY);
+}
+function loadBest(){
+  ["Easy","Medium","Hard"].forEach(d=>{
+    const v=localStorage.getItem("best"+d);
+    document.getElementById("best"+d).textContent=v?fmt(Number(v)):"—";
+  });
+}
+function save(){
+  localStorage.setItem(KEY,JSON.stringify({
+    solution,puzzle,values,notes:notes.map(s=>[...s]),given:[...given],selected,mistakes,seconds,difficulty:difficultyEl.value
+  }));
+}
+function loadSaved(){
+  const raw=localStorage.getItem(KEY);if(!raw){statusEl.textContent="No saved game found.";return false}
+  try{
+    const x=JSON.parse(raw);
+    solution=x.solution;puzzle=x.puzzle;values=x.values;notes=x.notes.map(a=>new Set(a));
+    given=new Set(x.given);selected=x.selected;mistakes=x.mistakes;seconds=x.seconds;
+    difficultyEl.value=x.difficulty||"medium";history=[];render();updateInfo();stopTimer();startTimer();
+    statusEl.textContent="Your saved game has been restored.";return true;
+  }catch(e){localStorage.removeItem(KEY);return false}
+}
+document.querySelectorAll("[data-num]").forEach(b=>b.onclick=()=>inputNumber(Number(b.dataset.num)));
+document.getElementById("newGame").onclick=startNew;
+document.getElementById("continueBtn").onclick=loadSaved;
+document.getElementById("erase").onclick=erase;
+document.getElementById("undo").onclick=undo;
+document.getElementById("notes").onclick=()=>{
+  noteMode=!noteMode;
+  document.getElementById("notes").classList.toggle("primary",noteMode);
+  statusEl.textContent=noteMode?"Notes mode ON — enter numbers to add/remove notes.":"Notes mode OFF.";
+};
+document.getElementById("modalNew").onclick=()=>{document.getElementById("modal").classList.remove("show");startNew()};
+document.getElementById("modal").onclick=e=>{if(e.target.id==="modal")document.getElementById("modal").classList.remove("show")};
+document.addEventListener("keydown",e=>{
+  if(/^[1-9]$/.test(e.key))inputNumber(Number(e.key));
+  if(e.key==="Backspace"||e.key==="Delete")erase();
+  if(e.key==="ArrowLeft"&&selected>=0){selected=Math.max(0,selected-1);render()}
+  if(e.key==="ArrowRight"&&selected>=0){selected=Math.min(80,selected+1);render()}
+});
+loadBest();
+if(!loadSaved())startNew();
+</script>
+</body>
+</html>
