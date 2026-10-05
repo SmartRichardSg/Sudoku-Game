@@ -57,12 +57,9 @@ button:active{transform:scale(.98)}
       <option value="hard">Hard</option>
     </select>
     <button class="primary" id="newGame">New Game</button>
-    <button id="pauseBtn">⏸ Pause</button>
-    <button id="continueBtn">Continue</button>
   </div>
 
   <div class="info">
-    <span>⏱ <b id="timer">00:00</b></span>
     <span>❌ Mistakes: <b id="mistakes">0</b>/3</span>
   </div>
 
@@ -77,12 +74,6 @@ button:active{transform:scale(.98)}
     <button id="undo">↩ Undo</button>
   </div>
 
-  <div class="stats">
-    <h2>Best Times</h2>
-    <p>Easy: <b id="bestEasy">—</b></p>
-    <p>Medium: <b id="bestMedium">—</b></p>
-    <p>Hard: <b id="bestHard">—</b></p>
-  </div>
   <p class="small" style="text-align:center;margin-top:14px">Your current game is saved automatically on this device.</p>
 </div>
 
@@ -97,11 +88,10 @@ button:active{transform:scale(.98)}
 <script>
 const boardEl=document.getElementById("board");
 const difficultyEl=document.getElementById("difficulty");
-const timerEl=document.getElementById("timer");
 const mistakesEl=document.getElementById("mistakes");
 const statusEl=document.getElementById("status");
 let solution=[], puzzle=[], values=[], notes=Array.from({length:81},()=>new Set());
-let given=new Set(), selected=-1, mistakes=0, seconds=0, timer=null, noteMode=false, history=[], timerPaused=false, gameId="";
+let given=new Set(), selected=-1, mistakes=0, noteMode=false, history=[], gameId="";
 const KEY="sudokuGameV1";
 
 function shuffle(a){a=[...a];for(let i=a.length-1;i>0;i--){let j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
@@ -146,14 +136,13 @@ function makePuzzle(diff){
   return puzzle;
 }
 function startNew(){
-  stopTimer(); const diff=difficultyEl.value;
+  const diff=difficultyEl.value;
   makePuzzle(diff); values=[...puzzle];notes=Array.from({length:81},()=>new Set());
   given=new Set(values.map((v,i)=>v?i:-1).filter(i=>i>=0));
-  selected=-1;mistakes=0;seconds=0;history=[];noteMode=false;timerPaused=false;gameId=Date.now().toString(36)+"-"+Math.random().toString(36).slice(2);
+  selected=-1;mistakes=0;history=[];noteMode=false;gameId=Date.now().toString(36)+"-"+Math.random().toString(36).slice(2);
   statusEl.textContent="Select a square, then enter a number.";
-  render();updateInfo();startTimer();save();
+  render();updateInfo();save();
 }
-function startTimer(){if(timer)return;timer=setInterval(()=>{seconds++;updateInfo();if(seconds%5===0)save()},1000)}
 function render(){
   boardEl.innerHTML="";
   const selVal=selected>=0?values[selected]:0;
@@ -220,26 +209,15 @@ function checkWin(){
   if(values.every((v,i)=>v===solution[i]))finish(true);
 }
 function finish(win){
-  timerPaused=false;stopTimer();
   if(win){
-    const diff=difficultyEl.value,key="best"+diff[0].toUpperCase()+diff.slice(1);
-    const old=localStorage.getItem(key);
-    if(!old||seconds<Number(old))localStorage.setItem(key,seconds);
     document.getElementById("modalTitle").textContent="Puzzle Complete! 🎉";
-    document.getElementById("modalText").textContent=`You solved the ${diff} puzzle in ${fmt(seconds)}.`;
-    loadBest();
+    document.getElementById("modalText").textContent=`You solved the ${difficultyEl.value} puzzle!`;
   }else{
     document.getElementById("modalTitle").textContent="Game Over";
     document.getElementById("modalText").textContent="Three mistakes. Start a new puzzle and try again.";
   }
   document.getElementById("modal").classList.add("show");
   localStorage.removeItem(KEY);
-}
-function loadBest(){
-  ["Easy","Medium","Hard"].forEach(d=>{
-    const v=localStorage.getItem("best"+d);
-    document.getElementById("best"+d).textContent=v?fmt(Number(v)):"—";
-  });
 }
 function save(){
   localStorage.setItem(KEY,JSON.stringify({
@@ -252,7 +230,6 @@ function save(){
     given:[...given],
     selected,
     mistakes,
-    seconds,
     difficulty:difficultyEl.value,
   }));
 }
@@ -276,17 +253,12 @@ function loadSaved(){
     given=new Set(x.given);
     selected=Number.isInteger(x.selected)?x.selected:-1;
     mistakes=Number.isInteger(x.mistakes)?x.mistakes:0;
-    seconds=Number.isInteger(x.seconds)?x.seconds:0;
     difficultyEl.value=x.difficulty||"medium";
-    timerPaused=false;
     gameId=x.gameId||("restored-"+Date.now().toString(36));
     history=[];
 
     render();
     updateInfo();
-    stopTimer();
-    document.getElementById("pauseBtn").textContent="⏸ Pause";
-    startTimer();
 
     statusEl.textContent="Your saved game has been restored.";
     return true;
@@ -298,25 +270,8 @@ function loadSaved(){
   }
 }
 
-function togglePause(){
-  if(timerPaused){
-    timerPaused=false;
-    startTimer();
-    statusEl.textContent="Timer resumed.";
-    document.getElementById("pauseBtn").textContent="⏸ Pause";
-  }else{
-    timerPaused=true;
-    stopTimer();
-    statusEl.textContent="Timer paused — you can continue playing.";
-    document.getElementById("pauseBtn").textContent="▶ Resume Timer";
-  }
-  save();
-}
-
 document.querySelectorAll("[data-num]").forEach(b=>b.onclick=()=>inputNumber(Number(b.dataset.num)));
 document.getElementById("newGame").onclick=startNew;
-document.getElementById("pauseBtn").onclick=togglePause;
-document.getElementById("continueBtn").onclick=loadSaved;
 document.getElementById("erase").onclick=erase;
 document.getElementById("undo").onclick=undo;
 document.getElementById("notes").onclick=()=>{
@@ -332,7 +287,6 @@ document.addEventListener("keydown",e=>{
   if(e.key==="ArrowLeft"&&selected>=0){selected=Math.max(0,selected-1);render()}
   if(e.key==="ArrowRight"&&selected>=0){selected=Math.min(80,selected+1);render()}
 });
-loadBest();
 if(!loadSaved())startNew();
 window.addEventListener("pagehide",save);
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")save()});
