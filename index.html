@@ -18,7 +18,7 @@ button:active{transform:scale(.98)}
 .primary{background:#2563eb;color:white}
 .info{display:flex;justify-content:space-between;gap:8px;margin:10px 2px;font-weight:700}
 .info span{background:white;padding:8px 11px;border-radius:10px;flex:1;text-align:center}
-.board{width:min(94vw,450px);aspect-ratio:1;margin:12px auto;background:#111827;display:grid;grid-template-columns:repeat(9,1fr);border:3px solid #111827;border-radius:5px;overflow:hidden}
+.board{position:relative;width:min(94vw,450px);aspect-ratio:1;margin:12px auto;background:#111827;display:grid;grid-template-columns:repeat(9,1fr);border:3px solid #111827;border-radius:5px;overflow:hidden}
 .cell{position:relative;background:white;border:1px solid #cbd5e1;display:flex;align-items:center;justify-content:center;font-size:clamp(21px,7vw,32px);font-weight:600;cursor:pointer;user-select:none}
 .cell:nth-child(3n){border-right:2px solid #111827}
 .cell:nth-child(n+19):nth-child(-n+27),.cell:nth-child(n+46):nth-child(-n+54){border-bottom:2px solid #111827}
@@ -166,7 +166,7 @@ function render(){
   // Pause overlay is always present; CSS decides whether it is visible.
   const overlay=document.createElement("div");
   overlay.className="pauseOverlay";
-  overlay.innerHTML="<div>PAUSED</div><button type="button" id="overlayResume">▶ Resume Game</button>";
+  overlay.innerHTML='<div>PAUSED</div><button type="button" id="overlayResume">▶ Resume Game</button>';
   boardEl.appendChild(overlay);
   document.getElementById("overlayResume").onclick=togglePause;
 
