@@ -154,9 +154,6 @@ function startNew(){
   render();updateInfo();startTimer();save();
 }
 function startTimer(){if(timer)return;timer=setInterval(()=>{seconds++;updateInfo();if(seconds%5===0)save()},1000)}
-function stopTimer(){if(timer){clearInterval(timer);timer=null}}
-function fmt(s){return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0")}
-function updateInfo(){timerEl.textContent=fmt(seconds);mistakesEl.textContent=mistakes}
 function render(){
   boardEl.innerHTML="";
   const selVal=selected>=0?values[selected]:0;
@@ -195,6 +192,7 @@ function render(){
     boardEl.appendChild(cell);
   }
 }
+
 function snapshot(){history.push({values:values.slice(),notes:notes.map(s=>new Set(s)),mistakes})}
 function inputNumber(n){
   if(selected<0){statusEl.textContent="Select a square first.";return}
