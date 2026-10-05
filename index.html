@@ -38,7 +38,7 @@ button:active{transform:scale(.98)}
 .stats p{margin:5px 0;color:#475569}
 .modal{position:fixed;inset:0;background:#0008;display:none;align-items:center;justify-content:center;padding:20px;z-index:5}
 .modal.show{display:flex}
-.pauseOverlay{position:absolute;inset:0;background:#111827e8;color:white;display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;font-size:30px;font-weight:800;z-index:2;pointer-events:none}.pauseOverlay button{pointer-events:auto;background:white;color:#1f2937;font-size:18px;padding:12px 22px}.board.paused .pauseOverlay{display:flex}
+.pauseOverlay{position:absolute;inset:0;background:rgba(17,24,39,.72);color:white;display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;font-size:30px;font-weight:800;z-index:2;pointer-events:none}.pauseOverlay button{pointer-events:auto;background:white;color:#1f2937;font-size:18px;padding:12px 22px}.board.paused .pauseOverlay{display:flex}
 .modalbox{background:white;border-radius:18px;padding:24px;text-align:center;width:min(360px,100%);box-shadow:0 10px 40px #0005}
 .modalbox h2{margin-top:0}
 .small{font-size:13px;color:#64748b}
@@ -101,7 +101,7 @@ const timerEl=document.getElementById("timer");
 const mistakesEl=document.getElementById("mistakes");
 const statusEl=document.getElementById("status");
 let solution=[], puzzle=[], values=[], notes=Array.from({length:81},()=>new Set());
-let given=new Set(), selected=-1, mistakes=0, seconds=0, timer=null, noteMode=false, history=[], paused=false;
+let given=new Set(), selected=-1, mistakes=0, seconds=0, timer=null, noteMode=false, history=[], paused=false, gameId="";
 const KEY="sudokuGameV1";
 
 function shuffle(a){a=[...a];for(let i=a.length-1;i>0;i--){let j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
@@ -149,7 +149,7 @@ function startNew(){
   stopTimer(); const diff=difficultyEl.value;
   makePuzzle(diff); values=[...puzzle];notes=Array.from({length:81},()=>new Set());
   given=new Set(values.map((v,i)=>v?i:-1).filter(i=>i>=0));
-  selected=-1;mistakes=0;seconds=0;history=[];noteMode=false;paused=false;
+  selected=-1;mistakes=0;seconds=0;history=[];noteMode=false;paused=false;gameId=Date.now().toString(36)+"-"+Math.random().toString(36).slice(2);
   statusEl.textContent="Select a square, then enter a number.";
   render();updateInfo();startTimer();save();
 }
@@ -263,30 +263,74 @@ function loadBest(){
 }
 function save(){
   localStorage.setItem(KEY,JSON.stringify({
-    solution,puzzle,values,notes:notes.map(s=>[...s]),given:[...given],selected,mistakes,seconds,difficulty:difficultyEl.value
+    version:2,
+    gameId,
+    solution,
+    puzzle,
+    values,
+    notes:notes.map(s=>[...s]),
+    given:[...given],
+    selected,
+    mistakes,
+    seconds,
+    difficulty:difficultyEl.value,
+    paused
   }));
 }
 function loadSaved(){
-  const raw=localStorage.getItem(KEY);if(!raw){statusEl.textContent="No saved game found.";return false}
+  const raw=localStorage.getItem(KEY);
+  if(!raw){statusEl.textContent="No saved game found.";return false}
   try{
     const x=JSON.parse(raw);
-    solution=x.solution;puzzle=x.puzzle;values=x.values;notes=x.notes.map(a=>new Set(a));
-    given=new Set(x.given);selected=x.selected;mistakes=x.mistakes;seconds=x.seconds;
-    difficultyEl.value=x.difficulty||"medium";paused=!!x.paused;history=[];render();updateInfo();stopTimer();if(!paused)startTimer();document.getElementById("pauseBtn").textContent=paused?"▶ Resume":"⏸ Pause";
-    statusEl.textContent="Your saved game has been restored.";return true;
-  }catch(e){localStorage.removeItem(KEY);return false}
-}
-function togglePause(){
-  if(!timer && !paused){ return; }
-  paused=!paused;
-  if(paused){
+    if(!Array.isArray(x.solution)||x.solution.length!==81||
+       !Array.isArray(x.puzzle)||x.puzzle.length!==81||
+       !Array.isArray(x.values)||x.values.length!==81||
+       !Array.isArray(x.notes)||x.notes.length!==81||
+       !Array.isArray(x.given)){
+      throw new Error("Invalid saved game");
+    }
+
+    solution=x.solution;
+    puzzle=x.puzzle;
+    values=x.values;
+    notes=x.notes.map(a=>new Set(Array.isArray(a)?a:[]));
+    given=new Set(x.given);
+    selected=Number.isInteger(x.selected)?x.selected:-1;
+    mistakes=Number.isInteger(x.mistakes)?x.mistakes:0;
+    seconds=Number.isInteger(x.seconds)?x.seconds:0;
+    difficultyEl.value=x.difficulty||"medium";
+    paused=!!x.paused;
+    gameId=x.gameId||("restored-"+Date.now().toString(36));
+    history=[];
+
+    render();
+    updateInfo();
     stopTimer();
-    statusEl.textContent="Game paused.";
-    document.getElementById("pauseBtn").textContent="▶ Resume";
-  }else{
+    document.getElementById("pauseBtn").textContent=paused?"▶ Resume":"⏸ Pause";
+    if(!paused)startTimer();
+
+    statusEl.textContent=paused?"Game restored — paused.":"Your saved game has been restored.";
+    return true;
+  }catch(e){
+    console.warn("Saved Sudoku could not be restored:",e);
+    localStorage.removeItem(KEY);
+    statusEl.textContent="Starting a new game.";
+    return false;
+  }
+}
+
+function togglePause(){
+  // Pause/resume only changes the timer state. It NEVER generates a new puzzle.
+  if(paused){
+    paused=false;
     startTimer();
     statusEl.textContent="Game resumed.";
     document.getElementById("pauseBtn").textContent="⏸ Pause";
+  }else{
+    paused=true;
+    stopTimer();
+    statusEl.textContent="Game paused.";
+    document.getElementById("pauseBtn").textContent="▶ Resume";
   }
   render();
   save();
@@ -313,6 +357,8 @@ document.addEventListener("keydown",e=>{
 });
 loadBest();
 if(!loadSaved())startNew();
+window.addEventListener("pagehide",save);
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")save()});
 </script>
 </body>
 </html>
