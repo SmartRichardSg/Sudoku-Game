@@ -24,7 +24,9 @@ button:active{transform:scale(.98)}
 .cell:nth-child(n+19):nth-child(-n+27),.cell:nth-child(n+46):nth-child(-n+54){border-bottom:2px solid #111827}
 .cell.given{background:#e9eef5;color:#111827}
 .cell.selected{background:#dbeafe}
-.cell.same{background:#eff6ff}
+.cell.same{background:#dbeafe !important}
+.cell.numberMatch{background:#bfdbfe !important;color:#1d4ed8 !important}
+.cell.related{background:#f1f5f9}
 .cell.error{background:#fee2e2;color:#b91c1c}
 .cell .notes{position:absolute;inset:2px;display:grid;grid-template-columns:repeat(3,1fr);font-size:10px;color:#64748b;font-weight:500;line-height:1}
 .cell .notes span{display:flex;align-items:center;justify-content:center}
@@ -36,6 +38,7 @@ button:active{transform:scale(.98)}
 .stats p{margin:5px 0;color:#475569}
 .modal{position:fixed;inset:0;background:#0008;display:none;align-items:center;justify-content:center;padding:20px;z-index:5}
 .modal.show{display:flex}
+.pauseOverlay{position:absolute;inset:0;background:#111827e8;color:white;display:none;align-items:center;justify-content:center;font-size:30px;font-weight:800;z-index:2}.board.paused .pauseOverlay{display:flex}
 .modalbox{background:white;border-radius:18px;padding:24px;text-align:center;width:min(360px,100%);box-shadow:0 10px 40px #0005}
 .modalbox h2{margin-top:0}
 .small{font-size:13px;color:#64748b}
@@ -54,6 +57,7 @@ button:active{transform:scale(.98)}
       <option value="hard">Hard</option>
     </select>
     <button class="primary" id="newGame">New Game</button>
+    <button id="pauseBtn">⏸ Pause</button>
     <button id="continueBtn">Continue</button>
   </div>
 
@@ -62,7 +66,7 @@ button:active{transform:scale(.98)}
     <span>❌ Mistakes: <b id="mistakes">0</b>/3</span>
   </div>
 
-  <div id="board" class="board" aria-label="Sudoku board"></div>
+  <div id="board" class="board" aria-label="Sudoku board"><div class="pauseOverlay">PAUSED</div></div>
   <div id="status" class="status">Select a square, then enter a number.</div>
 
   <div class="controls">
@@ -97,7 +101,7 @@ const timerEl=document.getElementById("timer");
 const mistakesEl=document.getElementById("mistakes");
 const statusEl=document.getElementById("status");
 let solution=[], puzzle=[], values=[], notes=Array.from({length:81},()=>new Set());
-let given=new Set(), selected=-1, mistakes=0, seconds=0, timer=null, noteMode=false, history=[];
+let given=new Set(), selected=-1, mistakes=0, seconds=0, timer=null, noteMode=false, history=[], paused=false;
 const KEY="sudokuGameV1";
 
 function shuffle(a){a=[...a];for(let i=a.length-1;i>0;i--){let j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
@@ -145,35 +149,69 @@ function startNew(){
   stopTimer(); const diff=difficultyEl.value;
   makePuzzle(diff); values=[...puzzle];notes=Array.from({length:81},()=>new Set());
   given=new Set(values.map((v,i)=>v?i:-1).filter(i=>i>=0));
-  selected=-1;mistakes=0;seconds=0;history=[];noteMode=false;
+  selected=-1;mistakes=0;seconds=0;history=[];noteMode=false;paused=false;
   statusEl.textContent="Select a square, then enter a number.";
   render();updateInfo();startTimer();save();
 }
-function startTimer(){timer=setInterval(()=>{seconds++;updateInfo();if(seconds%5===0)save()},1000)}
+function startTimer(){if(timer||paused)return;timer=setInterval(()=>{seconds++;updateInfo();if(seconds%5===0)save()},1000)}
 function stopTimer(){if(timer){clearInterval(timer);timer=null}}
 function fmt(s){return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0")}
 function updateInfo(){timerEl.textContent=fmt(seconds);mistakesEl.textContent=mistakes}
 function render(){
   boardEl.innerHTML="";
   const selVal=selected>=0?values[selected]:0;
+  const selRow=selected>=0?Math.floor(selected/9):-1;
+  const selCol=selected>=0?selected%9:-1;
+
+  // Pause overlay is always present; CSS decides whether it is visible.
+  const overlay=document.createElement("div");
+  overlay.className="pauseOverlay";
+  overlay.textContent="PAUSED";
+  boardEl.appendChild(overlay);
+
   for(let i=0;i<81;i++){
-    const cell=document.createElement("div");cell.className="cell";
+    const cell=document.createElement("div");
+    cell.className="cell";
+    const row=Math.floor(i/9), col=i%9;
+
     if(given.has(i))cell.classList.add("given");
     if(i===selected)cell.classList.add("selected");
-    if(selVal&&values[i]===selVal)cell.classList.add("same");
+
+    // Highlight every occurrence of the number in the selected square.
+    if(selVal && values[i]===selVal)cell.classList.add("numberMatch");
+
+    // Lightly highlight the selected square's row and column.
+    if(selected>=0 && (row===selRow || col===selCol))cell.classList.add("related");
+
     if(values[i] && !given.has(i) && values[i]!==solution[i])cell.classList.add("error");
-    if(values[i])cell.textContent=values[i];
-    else if(notes[i].size){
-      const ns=document.createElement("div");ns.className="notes";
-      for(let n=1;n<=9;n++){const s=document.createElement("span");s.textContent=notes[i].has(n)?n:"";ns.appendChild(s)}
+
+    if(values[i]) {
+      cell.textContent=values[i];
+    } else if(notes[i].size){
+      const ns=document.createElement("div");
+      ns.className="notes";
+      for(let n=1;n<=9;n++){
+        const s=document.createElement("span");
+        s.textContent=notes[i].has(n)?n:"";
+        ns.appendChild(s);
+      }
       cell.appendChild(ns);
     }
-    cell.onclick=()=>{selected=i;statusEl.textContent=given.has(i)?"This number is fixed.":"Enter a number.";render()};
+
+    cell.onclick=()=>{
+      if(paused)return;
+      selected=i;
+      statusEl.textContent=given.has(i)?"This number is fixed.":"Enter a number.";
+      render();
+    };
     boardEl.appendChild(cell);
   }
+
+  if(paused)boardEl.classList.add("paused");
 }
 function snapshot(){history.push({values:values.slice(),notes:notes.map(s=>new Set(s)),mistakes})}
 function inputNumber(n){
+  if(paused){statusEl.textContent="Game is paused.";return}
   if(selected<0){statusEl.textContent="Select a square first.";return}
   if(given.has(selected)){statusEl.textContent="That square is fixed.";return}
   if(noteMode){
@@ -188,10 +226,12 @@ function inputNumber(n){
   render();save();checkWin();
 }
 function erase(){
+  if(paused)return;
   if(selected<0||given.has(selected))return;
   snapshot();values[selected]=0;notes[selected].clear();render();save();
 }
 function undo(){
+  if(paused)return;
   const h=history.pop();if(!h){statusEl.textContent="Nothing to undo.";return}
   values=h.values;notes=h.notes;mistakes=h.mistakes;updateInfo();render();save();
 }
@@ -199,7 +239,7 @@ function checkWin(){
   if(values.every((v,i)=>v===solution[i]))finish(true);
 }
 function finish(win){
-  stopTimer();
+  paused=false;stopTimer();
   if(win){
     const diff=difficultyEl.value,key="best"+diff[0].toUpperCase()+diff.slice(1);
     const old=localStorage.getItem(key);
@@ -231,12 +271,29 @@ function loadSaved(){
     const x=JSON.parse(raw);
     solution=x.solution;puzzle=x.puzzle;values=x.values;notes=x.notes.map(a=>new Set(a));
     given=new Set(x.given);selected=x.selected;mistakes=x.mistakes;seconds=x.seconds;
-    difficultyEl.value=x.difficulty||"medium";history=[];render();updateInfo();stopTimer();startTimer();
+    difficultyEl.value=x.difficulty||"medium";paused=!!x.paused;history=[];render();updateInfo();stopTimer();if(!paused)startTimer();document.getElementById("pauseBtn").textContent=paused?"▶ Resume":"⏸ Pause";
     statusEl.textContent="Your saved game has been restored.";return true;
   }catch(e){localStorage.removeItem(KEY);return false}
 }
+function togglePause(){
+  if(!timer && !paused)return;
+  paused=!paused;
+  if(paused){
+    stopTimer();
+    statusEl.textContent="Game paused.";
+    document.getElementById("pauseBtn").textContent="▶ Resume";
+  }else{
+    startTimer();
+    statusEl.textContent="Game resumed.";
+    document.getElementById("pauseBtn").textContent="⏸ Pause";
+  }
+  render();
+  save();
+}
+
 document.querySelectorAll("[data-num]").forEach(b=>b.onclick=()=>inputNumber(Number(b.dataset.num)));
 document.getElementById("newGame").onclick=startNew;
+document.getElementById("pauseBtn").onclick=togglePause;
 document.getElementById("continueBtn").onclick=loadSaved;
 document.getElementById("erase").onclick=erase;
 document.getElementById("undo").onclick=undo;
