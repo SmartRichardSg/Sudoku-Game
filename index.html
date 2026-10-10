@@ -143,6 +143,10 @@ function startNew(){
   statusEl.textContent="Select a square, then enter a number.";
   render();updateInfo();save();
 }
+function updateInfo(){
+  mistakesEl.textContent=String(mistakes);
+}
+
 function render(){
   boardEl.innerHTML="";
   const selVal=selected>=0?values[selected]:0;
@@ -190,11 +194,21 @@ function inputNumber(n){
     snapshot(); notes[selected].has(n)?notes[selected].delete(n):notes[selected].add(n);
     render();save();return;
   }
+  // Show an incorrect entry in the selected square so the player can see
+  // exactly what was wrong. The .error class highlights it in red.
+  snapshot();
+  values[selected]=n;
+  notes[selected].clear();
   if(solution[selected]!==n){
-    mistakes++;updateInfo();statusEl.textContent="Not quite — try again.";
-    if(mistakes>=3){finish(false)} return;
+    mistakes++;
+    updateInfo();
+    statusEl.textContent="Incorrect number — shown in red. Try another number.";
+    render();
+    save();
+    if(mistakes>=3)finish(false);
+    return;
   }
-  snapshot();values[selected]=n;notes[selected].clear();statusEl.textContent="Good move!";
+  statusEl.textContent="Good move!";
   render();save();checkWin();
 }
 function erase(){
@@ -233,39 +247,59 @@ function save(){
     difficulty:difficultyEl.value,
   }));
 }
+function isValidSavedGame(x){
+  const isGrid=a=>Array.isArray(a)&&a.length===81&&a.every(v=>Number.isInteger(v)&&v>=0&&v<=9);
+  if(!x||!isGrid(x.solution)||!isGrid(x.puzzle)||!isGrid(x.values)||
+     !Array.isArray(x.notes)||x.notes.length!==81||!Array.isArray(x.given)||
+     !Number.isInteger(x.mistakes)||x.mistakes<0||x.mistakes>3||
+     ![-1,...Array.from({length:81},(_,i)=>i)].includes(x.selected)||
+     !["easy","medium","hard"].includes(x.difficulty)) return false;
+  // A saved solution must be a complete, valid Sudoku.
+  for(let r=0;r<9;r++){
+    const row=x.solution.slice(r*9,r*9+9);
+    const col=Array.from({length:9},(_,c)=>x.solution[c*9+r]);
+    if(new Set(row).size!==9||row.includes(0)||new Set(col).size!==9||col.includes(0))return false;
+  }
+  for(let br=0;br<9;br+=3)for(let bc=0;bc<9;bc+=3){
+    const box=[];
+    for(let r=br;r<br+3;r++)for(let c=bc;c<bc+3;c++)box.push(x.solution[r*9+c]);
+    if(new Set(box).size!==9||box.includes(0))return false;
+  }
+  const expectedGiven=[];
+  for(let i=0;i<81;i++){
+    if(x.puzzle[i]!==0&&x.puzzle[i]!==x.solution[i])return false;
+    if(x.puzzle[i]!==0)expectedGiven.push(i);
+    if(x.puzzle[i]!==0&&x.values[i]!==x.puzzle[i])return false;
+    if(!Array.isArray(x.notes[i])||!x.notes[i].every(n=>Number.isInteger(n)&&n>=1&&n<=9))return false;
+  }
+  const actual=[...new Set(x.given)];
+  if(actual.length!==expectedGiven.length||actual.some(i=>!Number.isInteger(i)||!expectedGiven.includes(i)))return false;
+  return true;
+}
 function loadSaved(){
   const raw=localStorage.getItem(KEY);
-  if(!raw){statusEl.textContent="No saved game found.";return false}
+  if(!raw){statusEl.textContent="Starting a new game.";return false}
   try{
     const x=JSON.parse(raw);
-    if(!Array.isArray(x.solution)||x.solution.length!==81||
-       !Array.isArray(x.puzzle)||x.puzzle.length!==81||
-       !Array.isArray(x.values)||x.values.length!==81||
-       !Array.isArray(x.notes)||x.notes.length!==81||
-       !Array.isArray(x.given)){
-      throw new Error("Invalid saved game");
-    }
-
-    solution=x.solution;
-    puzzle=x.puzzle;
-    values=x.values;
-    notes=x.notes.map(a=>new Set(Array.isArray(a)?a:[]));
+    if(!isValidSavedGame(x))throw new Error("Saved puzzle failed integrity checks");
+    solution=x.solution.slice();
+    puzzle=x.puzzle.slice();
+    values=x.values.slice();
+    notes=x.notes.map(a=>new Set(a));
     given=new Set(x.given);
-    selected=Number.isInteger(x.selected)?x.selected:-1;
-    mistakes=Number.isInteger(x.mistakes)?x.mistakes:0;
-    difficultyEl.value=x.difficulty||"medium";
-    gameId=x.gameId||("restored-"+Date.now().toString(36));
+    selected=x.selected;
+    mistakes=x.mistakes;
+    difficultyEl.value=x.difficulty;
+    gameId=typeof x.gameId==="string"?x.gameId:("restored-"+Date.now().toString(36));
     history=[];
-
     render();
     updateInfo();
-
     statusEl.textContent="Your saved game has been restored.";
     return true;
   }catch(e){
-    console.warn("Saved Sudoku could not be restored:",e);
+    console.warn("Saved Sudoku failed validation; starting a fresh puzzle.",e);
     localStorage.removeItem(KEY);
-    statusEl.textContent="Starting a new game.";
+    statusEl.textContent="Saved puzzle was invalid. A fresh game has been started.";
     return false;
   }
 }
